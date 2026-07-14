@@ -1,0 +1,2500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLMRouter — 一个接口，调度所有 AI</title>
+  <meta name="description" content="自托管的 LLM API 网关，将 26+ 厂商统一到一个 API。自动故障转移、智能路由、AES-256 加密存储。">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%230a0a14'/><stop offset='100%' stop-color='%2312122a'/></linearGradient><linearGradient id='ring' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%2300e5ff'/><stop offset='50%' stop-color='%237c3aed'/><stop offset='100%' stop-color='%2300e5ff'/></linearGradient><linearGradient id='bolt' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%2300e5ff'/><stop offset='100%' stop-color='%23a855f7'/></linearGradient><filter id='glow'><feGaussianBlur stdDeviation='1.5'/><feMerge><feMergeNode in='blur'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs><rect width='64' height='64' rx='14' fill='url(%23bg)'/><polygon points='32,8 52,20 52,44 32,56 12,44 12,20' fill='none' stroke='url(%23ring)' stroke-width='2.5' stroke-linejoin='round' filter='url(%23glow)' opacity='0.9'/><path d='M20 28 L28 22 L28 32 L36 26 L36 36 L44 30' fill='none' stroke='url(%23bolt)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' filter='url(%23glow)'/><circle cx='20' cy='28' r='2.5' fill='%2300e5ff' filter='url(%23glow)'/><circle cx='44' cy='30' r='2.5' fill='%23a855f7' filter='url(%23glow)'/></svg>">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+
+  <!-- GSAP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 80px; font-size: 16px; }
+    body {
+      font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
+      background: #f8f7fc;
+      color: #1a1a2e;
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    ::selection { background: rgba(0,229,255,0.25); color: #0a0a14; }
+    a { color: inherit; text-decoration: none; }
+    img, svg { display: block; max-width: 100%; }
+
+    /* ── Design Tokens — Logo-Cyan-Purple ── */
+    :root {
+      --bg-root: #f8f7fc;
+      --bg-surface: #ffffff;
+      --bg-elevated: #f0eff8;
+      --bg-hover: #e8e6f4;
+      --border-subtle: rgba(10,10,20,0.06);
+      --border-visible: rgba(10,10,20,0.10);
+      --border-accent: rgba(0,229,255,0.35);
+      --text-primary: #0f0f23;
+      --text-secondary: #4b4a6a;
+      --text-muted: #8e8da8;
+      --cyan: #00b8d4;
+      --cyan-bright: #00e5ff;
+      --cyan-glow: rgba(0,229,255,0.18);
+      --purple: #7c3aed;
+      --purple-light: #a855f7;
+      --purple-glow: rgba(124,58,237,0.12);
+      --gradient-main: linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #a855f7 100%);
+      --gradient-subtle: linear-gradient(135deg, rgba(0,229,255,0.08) 0%, rgba(124,58,237,0.06) 50%, rgba(168,85,247,0.04) 100%);
+      --green: #10b981;
+      --green-glow: rgba(16,185,129,0.15);
+      --red: #ef4444;
+      --shadow-card: 0 1px 3px rgba(10,10,20,0.04), 0 4px 12px rgba(10,10,20,0.03);
+      --shadow-card-hover: 0 2px 8px rgba(10,10,20,0.06), 0 8px 24px rgba(10,10,20,0.05);
+      --shadow-lg: 0 4px 16px rgba(10,10,20,0.08), 0 16px 48px rgba(10,10,20,0.06);
+    }
+
+    /* ── Canvas Background ── */
+    #particles-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.55;
+    }
+
+    /* ── Layout ── */
+    .container { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 0 clamp(1.5rem, 5vw, 4rem); }
+    .section { padding: clamp(5rem, 12vw, 10rem) 0; position: relative; z-index: 1; }
+
+    /* ── Top Gradient Bar ── */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--gradient-main);
+      z-index: 200;
+    }
+
+    /* ── Navigation ── */
+    .nav {
+      position: fixed;
+      top: 3px; left: 0; right: 0;
+      z-index: 100;
+      padding: 1rem clamp(1.5rem, 5vw, 4rem);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.35s ease;
+    }
+    .nav.scrolled {
+      background: rgba(248,247,252,0.82);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--border-subtle);
+      box-shadow: 0 1px 8px rgba(10,10,20,0.04);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+    .nav-logo-icon {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-logo-icon svg { width: 34px; height: 34px; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; }
+    .nav-link {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: color 0.2s ease;
+      letter-spacing: 0.01em;
+    }
+    .nav-link:hover { color: var(--cyan); }
+    .nav-cta {
+      padding: 0.5rem 1.25rem;
+      background: var(--gradient-main);
+      border: none;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #fff;
+      transition: all 0.25s ease;
+      box-shadow: 0 2px 8px rgba(0,229,255,0.2);
+    }
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(124,58,237,0.3);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      min-height: auto;
+      display: flex;
+      align-items: center;
+      padding: 6rem 0 2rem;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,229,255,0.06) 0%, transparent 60%),
+                  radial-gradient(ellipse 60% 50% at 70% 60%, rgba(124,58,237,0.04) 0%, transparent 60%);
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(2rem, 5vw, 4rem);
+      align-items: center;
+    }
+    .hero-content { max-width: 100%; }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 1.1rem;
+      background: #fff;
+      border: 1px solid var(--border-visible);
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+      animation: fadeInUp 0.8s ease backwards;
+      box-shadow: var(--shadow-card);
+    }
+    .hero-badge-name {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 0.85rem;
+      letter-spacing: -0.01em;
+      background: linear-gradient(135deg, #00e5ff 0%, #7c3aed 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-badge-sep {
+      color: var(--text-muted);
+      opacity: 0.5;
+      margin: 0 0.1rem;
+    }
+    .hero-badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green-glow);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
+    }
+    .hero-title {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: clamp(3rem, 8vw, 5.5rem);
+      font-weight: 600;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+      color: #0a0a14;
+      animation: fadeInUp 0.8s 0.1s ease backwards;
+    }
+    .hero-title-accent {
+      background: linear-gradient(135deg, #00e5ff 0%, #7c3aed 40%, #a855f7 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 3s linear infinite;
+    }
+    @keyframes shimmer {
+      to { background-position: 200% center; }
+    }
+    .hero-subtitle {
+      font-size: clamp(1.05rem, 2vw, 1.2rem);
+      color: var(--text-secondary);
+      max-width: 540px;
+      line-height: 1.75;
+      margin-bottom: 2.5rem;
+      animation: fadeInUp 0.8s 0.2s ease backwards;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      animation: fadeInUp 0.8s 0.3s ease backwards;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.875rem 1.75rem;
+      background: var(--gradient-main);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.95rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      letter-spacing: 0.01em;
+      box-shadow: 0 2px 12px rgba(0,229,255,0.25);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(124,58,237,0.3);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.875rem 1.75rem;
+      background: #fff;
+      border: 1px solid var(--border-visible);
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 0.95rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: var(--shadow-card);
+    }
+    .btn-secondary:hover {
+      border-color: rgba(0,229,255,0.3);
+      box-shadow: var(--shadow-card-hover);
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Stats Row ── */
+    .hero-stats {
+      display: flex;
+      gap: clamp(2rem, 5vw, 4rem);
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border-subtle);
+      animation: fadeInUp 0.8s 0.4s ease backwards;
+    }
+    .hero-stat-value {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      background: var(--gradient-main);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-stat-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Hero Visual ── */
+    .hero-visual {
+      position: relative;
+      animation: fadeInUp 1s 0.3s ease backwards;
+    }
+    .hero-visual-card {
+      background: #fff;
+      border: 1px solid var(--border-visible);
+      border-radius: 20px;
+      box-shadow: 0 8px 40px rgba(10,10,20,0.08), 0 2px 8px rgba(10,10,20,0.04);
+      overflow: hidden;
+      position: relative;
+    }
+    .hero-visual-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--gradient-main);
+    }
+    .hv-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.875rem 1.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .hv-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .hv-dot.r { background: #ff5f57; }
+    .hv-dot.y { background: #febc2e; }
+    .hv-dot.g { background: #28c840; }
+    .hv-title {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-left: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .hv-body { padding: 1.5rem; }
+    .hv-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .hv-row:last-child { border-bottom: none; }
+    .hv-provider {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+    }
+    .hv-provider-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .hv-provider-name {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .hv-provider-model {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .hv-status {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .hv-status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    .hv-status.active { color: var(--green); }
+    .hv-status.active .hv-status-dot { background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
+    .hv-status.fallback { color: var(--cyan); }
+    .hv-status.fallback .hv-status-dot { background: var(--cyan-bright); }
+    .hv-status.standby { color: var(--text-muted); }
+    .hv-status.standby .hv-status-dot { background: var(--text-muted); }
+    .hv-route-bar {
+      margin-top: 1rem;
+      padding: 0.875rem 1rem;
+      background: linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(124,58,237,0.04) 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+    }
+    .hv-route-icon {
+      width: 28px; height: 28px;
+      border-radius: 7px;
+      background: var(--gradient-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .hv-route-text {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+    .hv-route-text strong { color: var(--text-primary); }
+
+    @media (max-width: 900px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-visual { display: none; }
+    }
+
+    /* ── Section Headers ── */
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      background: var(--gradient-main);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 1rem;
+    }
+    .section-title {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 600;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+      color: #0a0a14;
+    }
+    .section-desc {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      line-height: 1.7;
+    }
+
+    /* ── Pain Points ── */
+    .pain-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 4rem;
+    }
+    .pain-card {
+      padding: 2rem;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      transition: all 0.35s ease;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+    .pain-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0,229,255,0.06), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+    .pain-card:hover::before { opacity: 1; }
+    .pain-card:hover {
+      border-color: rgba(0,229,255,0.25);
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-card-hover);
+    }
+    .pain-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(124,58,237,0.08));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      margin-bottom: 1.25rem;
+    }
+    .pain-card h3 {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    .pain-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ── Architecture Visual ── */
+    .arch-section {
+      background: linear-gradient(180deg, #f0eff8 0%, #f8f7fc 100%);
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .arch-diagram {
+      margin-top: 4rem;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: clamp(2rem, 5vw, 4rem);
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+    .arch-flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    .arch-row {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      width: 100%;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .arch-node {
+      padding: 1rem 1.5rem;
+      background: var(--bg-root);
+      border: 1px solid var(--border-visible);
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: all 0.3s ease;
+      color: var(--text-secondary);
+    }
+    .arch-node.client { border-color: rgba(0,229,255,0.3); color: #0a0a14; }
+    .arch-node.gateway {
+      background: linear-gradient(135deg, rgba(0,229,255,0.08), rgba(124,58,237,0.06));
+      border-color: rgba(0,229,255,0.35);
+      color: #0a0a14;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 1.25rem 2rem;
+      box-shadow: 0 2px 12px rgba(0,229,255,0.08);
+    }
+    .arch-node.provider {
+      background: var(--bg-elevated);
+      border-color: var(--border-subtle);
+    }
+    .arch-arrow {
+      color: var(--cyan);
+      font-size: 1.2rem;
+      flex-shrink: 0;
+      font-weight: 700;
+    }
+    .arch-arrow-down {
+      color: var(--purple-light);
+      font-size: 1.5rem;
+      margin: 0.5rem 0;
+    }
+    .provider-cluster {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-top: 0.5rem;
+    }
+    .provider-tag {
+      padding: 0.5rem 0.875rem;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.3s ease;
+      box-shadow: 0 1px 2px rgba(10,10,20,0.03);
+    }
+    .provider-tag:hover {
+      border-color: rgba(0,229,255,0.3);
+      color: var(--text-primary);
+      box-shadow: 0 2px 8px rgba(0,229,255,0.08);
+    }
+
+    /* ── Bento Features ── */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: auto;
+      gap: 1rem;
+      margin-top: 4rem;
+    }
+    @media (max-width: 768px) {
+      .bento-grid { grid-template-columns: 1fr; }
+      .bento-item.col-2 { grid-column: span 1; }
+      .bento-item.row-2 { grid-row: span 1; }
+    }
+    .bento-item {
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 2rem;
+      transition: all 0.4s ease;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+    .bento-item:hover {
+      border-color: rgba(0,229,255,0.25);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-card-hover);
+    }
+    .bento-item.col-2 { grid-column: span 2; }
+    .bento-item.row-2 { grid-row: span 2; }
+    .bento-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(124,58,237,0.08));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      margin-bottom: 1.25rem;
+    }
+    .bento-item h3 {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 0.625rem;
+      letter-spacing: -0.01em;
+      color: #0a0a14;
+    }
+    .bento-item p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+    .bento-code-block {
+      margin-top: 1.25rem;
+      padding: 1rem 1.25rem;
+      background: #f8f7fc;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      overflow-x: auto;
+      line-height: 1.8;
+    }
+    .bento-code-block .hl { color: #00b8d4; font-weight: 500; }
+    .bento-code-block .hl2 { color: #7c3aed; font-weight: 500; }
+    .bento-code-block .c { color: #8e8da8; font-style: italic; }
+
+    /* ── Providers Section ── */
+    .providers-scroll {
+      margin-top: 4rem;
+      overflow: hidden;
+      position: relative;
+      mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+    }
+    .providers-track {
+      display: flex;
+      gap: 1.5rem;
+      width: max-content;
+    }
+    .provider-card {
+      flex-shrink: 0;
+      padding: 1.25rem 1.75rem;
+      background: #fff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: all 0.3s ease;
+      box-shadow: var(--shadow-card);
+    }
+    .provider-card:hover {
+      border-color: rgba(0,229,255,0.3);
+      box-shadow: var(--shadow-card-hover);
+    }
+    .provider-card-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green-glow);
+      flex-shrink: 0;
+    }
+    .provider-card-name {
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
+      font-size: 0.9rem;
+      font-weight: 500;
+      white-space: nowrap;
+      color: var(--text-primary);
+    }
+
+    /* ── CTA ── */
+    .cta-section {
+      text-align: center;
+      background: linear-gradient(180deg, #f8f7fc 0%, #f0eff8 100%);
+      border-top: 1px solid var(--border-subtle);
+    }
+    .cta-section .btn-primary {
+      margin-top: 2.5rem;
+      font-size: 1.05rem;
+      padding: 1rem 2.25rem;
+    }
+    .cta-meta {
+      margin-top: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      flex-wrap: wrap;
+    }
+    .cta-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 3rem clamp(1.5rem, 5vw, 4rem);
+      background: #fff;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+    .footer-copy {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .footer-links {
+      display: flex;
+      gap: 2rem;
+    }
+    .footer-link {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      transition: color 0.2s;
+    }
+    .footer-link:hover { color: var(--cyan); }
+
+    /* ── Glow Border utility ── */
+    .glow-border {
+      position: relative;
+    }
+    .glow-border::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      background: linear-gradient(135deg, rgba(0,229,255,0.3), transparent 40%, transparent 60%, rgba(124,58,237,0.3));
+      z-index: -1;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    .glow-border:hover::after { opacity: 0.25; }
+
+    /* ── Feature Blocks (Apple-style alternating) ── */
+    .feature-block {
+      padding: clamp(4rem, 8vw, 7rem) 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-block:nth-child(even) { background: var(--bg-elevated); }
+    .feature-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(3rem, 6vw, 5rem);
+      align-items: center;
+    }
+    .feature-block:nth-child(even) .feature-inner { direction: rtl; }
+    .feature-block:nth-child(even) .feature-inner > * { direction: ltr; }
+    .feature-text { max-width: 520px; }
+    .feature-icon {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background: var(--gradient-main);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0,229,255,0.2);
+    }
+    .feature-icon svg { width: 28px; height: 28px; }
+    .feature-title {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+      font-weight: 600; line-height: 1.15;
+      letter-spacing: -0.02em; color: #0a0a14;
+      margin-bottom: 1rem;
+    }
+    .feature-desc {
+      font-size: 1rem; color: var(--text-secondary);
+      line-height: 1.75; margin-bottom: 1.5rem;
+    }
+    .feature-list { list-style: none; padding: 0; }
+    .feature-list li {
+      display: flex; align-items: flex-start;
+      gap: 0.625rem; padding: 0.5rem 0;
+      font-size: 0.9rem; color: var(--text-secondary);
+    }
+    .feature-list li svg {
+      width: 18px; height: 18px; flex-shrink: 0;
+      margin-top: 2px; color: var(--cyan);
+    }
+
+    /* ── Feature Visual Cards ── */
+    .feature-visual { position: relative; }
+    .fv-card {
+      background: #fff; border: 1px solid var(--border-visible);
+      border-radius: 20px; box-shadow: var(--shadow-lg);
+      overflow: hidden; position: relative;
+    }
+    .fv-card-header {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.125rem;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(248,247,252,0.5);
+    }
+    .fv-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .fv-dot.r { background: #ff5f57; }
+    .fv-dot.y { background: #febc2e; }
+    .fv-dot.g { background: #28c840; }
+    .fv-card-title {
+      font-size: 0.72rem; color: var(--text-muted);
+      margin-left: 0.5rem; font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Route table */
+    .route-table { padding: 1.25rem; }
+    .route-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.625rem 0.875rem; border-radius: 10px;
+      margin-bottom: 0.5rem; transition: background 0.2s;
+    }
+    .route-row:hover { background: var(--bg-elevated); }
+    .route-row.active { background: linear-gradient(135deg, rgba(0,229,255,0.06), rgba(124,58,237,0.04)); }
+    .route-provider { display: flex; align-items: center; gap: 0.625rem; }
+    .route-icon {
+      width: 30px; height: 30px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.8rem; font-weight: 700; color: #fff;
+    }
+    .route-name { font-size: 0.82rem; font-weight: 500; color: var(--text-primary); }
+    .route-meta { font-size: 0.68rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+    .route-status {
+      font-size: 0.72rem; font-weight: 600;
+      padding: 0.2rem 0.6rem; border-radius: 100px;
+    }
+    .route-status.ok { background: rgba(16,185,129,0.1); color: #059669; }
+    .route-status.fallback { background: rgba(0,184,212,0.1); color: #0097a7; }
+    .route-status.standby { background: rgba(142,141,168,0.1); color: #6b6a85; }
+
+    /* Code block */
+    .code-block { padding: 1.25rem; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.8; }
+    .code-line { display: flex; gap: 1rem; }
+    .code-ln { color: var(--text-muted); user-select: none; min-width: 1.5rem; text-align: right; }
+    .code-content { color: var(--text-primary); }
+    .code-kw { color: #7c3aed; }
+    .code-str { color: #059669; }
+    .code-fn { color: #00b8d4; }
+    .code-cmt { color: var(--text-muted); font-style: italic; }
+    .code-var { color: #d97706; }
+
+    /* Failover visual */
+    .failover-visual { padding: 1.5rem; }
+    .fo-step { display: flex; align-items: center; gap: 0.875rem; padding: 0.75rem 0; }
+    .fo-step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .fo-step-text { font-size: 0.82rem; color: var(--text-secondary); }
+    .fo-step-text strong { color: var(--text-primary); }
+    .fo-arrow { margin-left: 14px; border-left: 2px dashed var(--border-visible); height: 20px; }
+
+    /* Fusion visual */
+    .fusion-visual { padding: 1.5rem; }
+    .fu-node {
+      display: flex; align-items: center; gap: 0.625rem;
+      padding: 0.5rem 0.75rem; background: var(--bg-elevated);
+      border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.8rem;
+    }
+    .fu-node-icon {
+      width: 24px; height: 24px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 700; color: #fff;
+    }
+    .fu-merge { text-align: center; padding: 0.75rem; margin: 0.5rem 0; }
+    .fu-merge-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: var(--gradient-main);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto; box-shadow: 0 4px 16px rgba(0,229,255,0.2);
+    }
+
+    /* Encryption visual */
+    .encrypt-visual { padding: 1.5rem; }
+    .enc-flow { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 1rem 0; }
+    .enc-box {
+      flex: 1; text-align: center; padding: 1rem 0.5rem;
+      border-radius: 12px; border: 1px solid var(--border-visible);
+      background: var(--bg-surface);
+    }
+    .enc-box-icon { font-size: 1.5rem; margin-bottom: 0.375rem; }
+    .enc-box-label { font-size: 0.72rem; font-weight: 600; color: var(--text-primary); }
+    .enc-box-sub { font-size: 0.65rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+    .enc-arrow { flex-shrink: 0; color: var(--cyan); }
+
+    /* ── Deployment Steps ── */
+    .step-section {
+      padding: clamp(4rem, 8vw, 6rem) 0;
+      position: relative;
+    }
+    .step-section:nth-child(even) { background: var(--bg-elevated); }
+    .step-header { display: flex; align-items: flex-start; gap: 1.5rem; margin-bottom: 2.5rem; }
+    .step-number {
+      width: 56px; height: 56px; border-radius: 16px;
+      background: var(--gradient-main);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: 1.5rem; font-weight: 700; color: #fff; flex-shrink: 0;
+      box-shadow: 0 4px 20px rgba(0,229,255,0.2);
+    }
+    .step-header-text { padding-top: 0.25rem; }
+    .step-label {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.15em; background: var(--gradient-main);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; margin-bottom: 0.5rem;
+    }
+    .step-title {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; color: #0a0a14;
+    }
+    .step-desc {
+      font-size: 0.95rem; color: var(--text-secondary);
+      line-height: 1.7; max-width: 640px; margin-bottom: 2rem;
+    }
+
+    /* ── Terminal Block (light theme) ── */
+    .terminal {
+      background: #ffffff; border-radius: 16px; overflow: hidden;
+      box-shadow: var(--shadow-lg); border: 1px solid var(--border-visible);
+      position: relative;
+    }
+    .terminal::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 2px; background: var(--gradient-main); opacity: 0.6; z-index: 1;
+    }
+    .terminal-header {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.125rem;
+      background: #f5f4fa; border-bottom: 1px solid var(--border-subtle);
+    }
+    .term-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .term-dot.r { background: #ff5f57; }
+    .term-dot.y { background: #febc2e; }
+    .term-dot.g { background: #28c840; }
+    .terminal-title {
+      font-size: 0.72rem; color: var(--text-muted);
+      margin-left: 0.5rem; font-family: 'JetBrains Mono', monospace;
+    }
+    .terminal-body {
+      padding: 1.25rem 1.5rem; font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem; line-height: 1.9; color: #3a3a50;
+    }
+    .term-prompt { color: #00b8d4; font-weight: 600; }
+    .term-cmd { color: #0f0f23; font-weight: 500; }
+    .term-out { color: #6b6a85; }
+    .term-success { color: #059669; }
+    .term-warn { color: #d97706; }
+    .term-comment { color: var(--text-muted); font-style: italic; }
+    .term-path { color: #059669; }
+    .term-key { color: #dc2626; }
+
+    /* ── Two Column Layout ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
+
+    /* ── Config Card ── */
+    .config-card {
+      background: #fff; border: 1px solid var(--border-visible);
+      border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-lg);
+    }
+    .config-header {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.125rem;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(248,247,252,0.5);
+    }
+    .config-title {
+      font-size: 0.72rem; color: var(--text-muted);
+      margin-left: 0.5rem; font-family: 'JetBrains Mono', monospace;
+    }
+    .config-body {
+      padding: 1.25rem 1.5rem; font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem; line-height: 1.9; color: var(--text-primary);
+    }
+    .cfg-key { color: #7c3aed; }
+    .cfg-str { color: #059669; }
+    .cfg-num { color: #d97706; }
+    .cfg-cmt { color: var(--text-muted); font-style: italic; }
+    .cfg-bool { color: #00b8d4; }
+
+    /* ── Info Cards ── */
+    .info-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem; margin-top: 2rem;
+    }
+    .info-card {
+      background: #fff; border: 1px solid var(--border-subtle);
+      border-radius: 16px; padding: 1.75rem; box-shadow: var(--shadow-card);
+      transition: all 0.3s ease; position: relative; overflow: hidden;
+    }
+    .info-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .info-card-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1rem; font-size: 1.25rem;
+    }
+    .info-card-title {
+      font-family: 'Clash Display', system-ui, sans-serif;
+      font-size: 1.1rem; font-weight: 600; color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    .info-card-desc { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; }
+    .info-card-tag {
+      display: inline-block; padding: 0.2rem 0.625rem;
+      border-radius: 100px; font-size: 0.7rem; font-weight: 600; margin-top: 0.75rem;
+    }
+
+    /* ── Status Badges ── */
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 0.375rem;
+      padding: 0.375rem 0.875rem; border-radius: 100px;
+      font-size: 0.78rem; font-weight: 600;
+    }
+    .status-running { background: rgba(16,185,129,0.1); color: #059669; }
+    .status-stopped { background: rgba(239,68,68,0.1); color: #dc2626; }
+    .status-badge .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    .status-running .status-dot { background: #10b981; box-shadow: 0 0 6px var(--green-glow); }
+    .status-stopped .status-dot { background: #ef4444; }
+
+    /* ── Warning / Tip Boxes ── */
+    .warn-box {
+      padding: 1rem 1.25rem; background: rgba(245,158,11,0.08);
+      border: 1px solid rgba(245,158,11,0.2); border-radius: 12px;
+      display: flex; align-items: flex-start; gap: 0.625rem;
+      margin-top: 1.5rem; font-size: 0.85rem; color: #92400e; line-height: 1.6;
+    }
+    .warn-box svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; color: #f59e0b; }
+    .tip-box {
+      padding: 1rem 1.25rem; background: rgba(0,184,212,0.06);
+      border: 1px solid rgba(0,184,212,0.15); border-radius: 12px;
+      display: flex; align-items: flex-start; gap: 0.625rem;
+      margin-top: 1.5rem; font-size: 0.85rem; color: #00697a; line-height: 1.6;
+    }
+    .tip-box svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; color: var(--cyan); }
+
+    /* ── Responsive ── */
+    @media (max-width: 1024px) {
+      .hero-stats { gap: 2rem; }
+      .bento-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 900px) {
+      .feature-inner { grid-template-columns: 1fr !important; direction: ltr !important; }
+      .feature-inner > * { direction: ltr !important; }
+      .two-col { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero-stats { flex-wrap: wrap; gap: 2rem 3rem; }
+      .hero-stats > * { flex: 1 1 auto; min-width: 120px; }
+      .bento-grid { grid-template-columns: 1fr; }
+      .bento-item.col-2 { grid-column: span 1; }
+      .bento-item.row-2 { grid-row: span 1; }
+      .enc-flow { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Canvas Particles -->
+  <canvas id="particles-canvas"></canvas>
+
+  <!-- Navigation -->
+  <nav class="nav" id="nav">
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+          <defs>
+            <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#0a0a14"/>
+              <stop offset="100%" stop-color="#12122a"/>
+            </linearGradient>
+            <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#00e5ff"/>
+              <stop offset="50%" stop-color="#7c3aed"/>
+              <stop offset="100%" stop-color="#00e5ff"/>
+            </linearGradient>
+            <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#00e5ff"/>
+              <stop offset="100%" stop-color="#a855f7"/>
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="1.5" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+          <polygon points="32,8 52,20 52,44 32,56 12,44 12,20" fill="none" stroke="url(#ring)" stroke-width="2.5" stroke-linejoin="round" filter="url(#glow)" opacity="0.9"/>
+          <path d="M20 28 L28 22 L28 32 L36 26 L36 36 L44 30" fill="none" stroke="url(#bolt)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+          <circle cx="20" cy="28" r="2.5" fill="#00e5ff" filter="url(#glow)"/>
+          <circle cx="44" cy="30" r="2.5" fill="#a855f7" filter="url(#glow)"/>
+        </svg>
+      </div>
+      LLMRouter
+    </a>
+    <div class="nav-links">
+      <a href="#features" class="nav-link">特性</a>
+      <a href="#architecture" class="nav-link">架构</a>
+      <a href="#features-detail" class="nav-link">功能</a>
+      <a href="#deploy" class="nav-link">部署</a>
+      <a href="#providers" class="nav-link">厂商</a>
+      <a href="#security" class="nav-link">安全</a>
+      <a href="#deploy" class="nav-cta">快速开始</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero section">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-content">
+          <div class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            <span class="hero-badge-name">LLMRouter</span>
+            <span class="hero-badge-sep">·</span>
+            <span>自托管</span>
+            <span class="hero-badge-sep">·</span>
+            <span>密钥不出本机</span>
+          </div>
+          <h1 class="hero-title">
+            一个接口，<br>
+            <span class="hero-title-accent">调度所有 AI。</span>
+          </h1>
+          <p class="hero-subtitle">
+            装在你自己电脑上，把 26+ AI 厂商聚合到一个 OpenAI 兼容接口。密钥本地加密，厂商挂了自动切，智能路由选最优——客户端零改动。
+          </p>
+          <div class="hero-actions">
+            <a href="#deploy" class="btn-primary">
+              <span>快速开始</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </a>
+            <a href="#features-detail" class="btn-secondary">探索全部特性</a>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="hero-visual-card">
+            <div class="hv-header">
+              <div class="hv-dot r"></div>
+              <div class="hv-dot y"></div>
+              <div class="hv-dot g"></div>
+              <span class="hv-title">LLMRouter — 路由面板</span>
+            </div>
+            <div class="hv-body">
+              <div class="hv-row">
+                <div class="hv-provider">
+                  <div class="hv-provider-icon" style="background:linear-gradient(135deg,#4285f4,#1a73e8);">G</div>
+                  <div>
+                    <div class="hv-provider-name">Google Gemini</div>
+                    <div class="hv-provider-model">gemini-2.0-flash</div>
+                  </div>
+                </div>
+                <div class="hv-status active"><div class="hv-status-dot"></div>运行中</div>
+              </div>
+              <div class="hv-row">
+                <div class="hv-provider">
+                  <div class="hv-provider-icon" style="background:linear-gradient(135deg,#f55036,#c2410c);">G</div>
+                  <div>
+                    <div class="hv-provider-name">Groq</div>
+                    <div class="hv-provider-model">llama-3.3-70b</div>
+                  </div>
+                </div>
+                <div class="hv-status active"><div class="hv-status-dot"></div>运行中</div>
+              </div>
+              <div class="hv-row">
+                <div class="hv-provider">
+                  <div class="hv-provider-icon" style="background:linear-gradient(135deg,#6366f1,#4f46e5);">O</div>
+                  <div>
+                    <div class="hv-provider-name">OpenRouter</div>
+                    <div class="hv-provider-model">gpt-4o · claude-3.5-sonnet</div>
+                  </div>
+                </div>
+                <div class="hv-status active"><div class="hv-status-dot"></div>运行中</div>
+              </div>
+              <div class="hv-row">
+                <div class="hv-provider">
+                  <div class="hv-provider-icon" style="background:linear-gradient(135deg,#10b981,#059669);">S</div>
+                  <div>
+                    <div class="hv-provider-name">SiliconFlow（硅基流动）</div>
+                    <div class="hv-provider-model">deepseek-v3 · qwen-max</div>
+                  </div>
+                </div>
+                <div class="hv-status fallback"><div class="hv-status-dot"></div>备用</div>
+              </div>
+              <div class="hv-row">
+                <div class="hv-provider">
+                  <div class="hv-provider-icon" style="background:linear-gradient(135deg,#7c3aed,#a855f7);">Z</div>
+                  <div>
+                    <div class="hv-provider-name">智谱 AI</div>
+                    <div class="hv-provider-model">glm-4 · glm-4-flash</div>
+                  </div>
+                </div>
+                <div class="hv-status standby"><div class="hv-status-dot"></div>待命</div>
+              </div>
+              <div class="hv-route-bar">
+                <div class="hv-route-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </div>
+                <div class="hv-route-text">
+                  <strong>智能路由</strong>：当前请求 → Google gemini-2.0-flash · 延迟 <strong>35ms</strong> · 成功率 <strong>99.99%</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div>
+          <div class="hero-stat-value">26+</div>
+          <div class="hero-stat-label">AI 厂商接入</div>
+        </div>
+        <div>
+          <div class="hero-stat-value">40MB</div>
+          <div class="hero-stat-label">空闲内存占用</div>
+        </div>
+        <div>
+          <div class="hero-stat-value">20x</div>
+          <div class="hero-stat-label">自动故障转移</div>
+        </div>
+        <div>
+          <div class="hero-stat-value">AES-256</div>
+          <div class="hero-stat-label">密钥本地加密</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pain Points -->
+  <section class="section" id="pain-points" style="padding-top: clamp(3rem, 6vw, 5rem);">
+    <div class="container">
+      <div class="section-label">不止你一个人头疼</div>
+      <h2 class="section-title">管理多个 AI API<br>到底有多烦？</h2>
+      <p class="section-desc">
+        每个厂商自己的 SDK、各自的限流规则、账单分散在不同平台。当一个挂了，你得手动切——或者更惨，根本不知道它挂了。
+      </p>
+      <div class="pain-grid">
+        <div class="pain-card" data-mouse>
+          <div class="pain-icon">🔐</div>
+          <h3>密钥散落各处</h3>
+          <p>Google 的密钥在本地，Groq 的在环境变量，OpenRouter 的硬编码在脚本里。安全？不存在的。</p>
+        </div>
+        <div class="pain-card" data-mouse>
+          <div class="pain-icon">⚠️</div>
+          <h3>厂商随时限流</h3>
+          <p>免费额度用完了就是 429。模型突然降智，你不知道是限流了还是模型崩了。重试也没用，干等。</p>
+        </div>
+        <div class="pain-card" data-mouse>
+          <div class="pain-icon">📈</div>
+          <h3>账单完全失控</h3>
+          <p>Groq 花了多少钱？智谱用了多少 Token？每个厂商独立计费，月底只能对着账单发懵。</p>
+        </div>
+        <div class="pain-card" data-mouse>
+          <div class="pain-icon">🔧</div>
+          <h3>客户端适配地狱</h3>
+          <p>OpenAI SDK、Anthropic SDK、Claude Code...每个工具都要配不同的 base_url 和密钥，烦不胜烦。</p>
+        </div>
+        <div class="pain-card" data-mouse>
+          <div class="pain-icon">🧠</div>
+          <h3>选模型全靠猜</h3>
+          <p>Groq 快但模型旧，智谱中文好但英文弱。每个请求手动挑模型？等你挑完，AI 早回答完了。</p>
+        </div>
+        <div class="pain-card" data-mouse>
+          <div class="pain-icon">🔑</div>
+          <h3>密钥泄露风险</h3>
+          <p>明文密钥放在 .env 或配置文件里，一不小心就提交到代码仓库。AES-256 加密才是正道。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="arch-section section" id="architecture">
+    <div class="container">
+      <div class="section-label">它是怎么工作的</div>
+      <h2 class="section-title">一个接口，<br>接管一切。</h2>
+      <p class="section-desc">
+        LLMRouter 安装在你自己的电脑上，所有数据存在本地 SQLite 里。所有厂商的 API 密钥经 AES-256 加密后存储在本地，绝不离开你的机器——没有云端中转，没有第三方截获。代码经过严格测试，稳定可靠。
+      </p>
+      <div class="arch-diagram">
+        <div class="arch-flow">
+          <div class="arch-row">
+            <span class="arch-node client">AI 客户端</span>
+            <span class="arch-arrow">→</span>
+            <span class="arch-node client">SDK / CLI</span>
+            <span class="arch-arrow">→</span>
+            <span class="arch-node gateway">LLMRouter :2210</span>
+          </div>
+          <span class="arch-arrow-down">↓</span>
+          <div class="arch-row">
+            <span class="arch-node">智能路由引擎</span>
+            <span class="arch-arrow">+</span>
+            <span class="arch-node">AES-256 解密</span>
+            <span class="arch-arrow">+</span>
+            <span class="arch-node">限速守护</span>
+          </div>
+          <span class="arch-arrow-down">↓</span>
+          <div class="provider-cluster">
+            <span class="provider-tag">Google Gemini</span>
+            <span class="provider-tag">Groq</span>
+            <span class="provider-tag">Cerebras</span>
+            <span class="provider-tag">NVIDIA NIM</span>
+            <span class="provider-tag">Mistral</span>
+            <span class="provider-tag">OpenRouter</span>
+            <span class="provider-tag">GitHub Models</span>
+            <span class="provider-tag">Cohere</span>
+            <span class="provider-tag">Cloudflare AI</span>
+            <span class="provider-tag">HuggingFace</span>
+            <span class="provider-tag">Ollama Cloud</span>
+            <span class="provider-tag">智谱 AI</span>
+            <span class="provider-tag">阿里云百炼</span>
+            <span class="provider-tag">百度千帆</span>
+            <span class="provider-tag">硅基流动</span>
+            <span class="provider-tag">Reka</span>
+            <span class="provider-tag">Pollinations</span>
+            <span class="provider-tag">AI Horde</span>
+            <span class="provider-tag">自定义接口</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Bento -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-label">核心能力</div>
+      <h2 class="section-title">不只是路由，<br>是 AI 模型的指挥中心。</h2>
+      <p class="section-desc">
+        每个特性都经过实战打磨——从自动故障转移到多模型融合，这是一套完整的 LLM 调度系统。
+      </p>
+      <div class="bento-grid">
+        <!-- Smart Routing -->
+        <div class="bento-item col-2 glow-border">
+          <div class="bento-icon">🎯</div>
+          <h3>智能路由引擎</h3>
+          <p>传 <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.88em;color:#00b8d4;">model="auto"</code>，系统根据可靠性、速度、智力三维度 + Thompson 采样自动选最优模型。支持 priority / balanced / smartest / fastest / reliable / custom 六种策略。</p>
+          <div class="bento-code-block">
+            <span class="c"># 六种路由策略，一行切换</span><br>
+            <span class="hl">model=</span><span class="hl2">"auto"</span>        <span class="c">← 默认自动路由</span><br>
+            <span class="hl">model=</span><span class="hl2">"auto:smartest"</span> <span class="c">← 智能优先</span><br>
+            <span class="hl">model=</span><span class="hl2">"auto:fastest"</span>  <span class="c">← 速度优先</span>
+          </div>
+        </div>
+
+        <!-- Auto Failover -->
+        <div class="bento-item glow-border">
+          <div class="bento-icon">🔄</div>
+          <h3>自动故障转移</h3>
+          <p>厂商 429 / 5xx / 超时时自动切换下一个模型，最多 20 次尝试。冷却时间智能递增，不给已挂厂商反复请求。</p>
+        </div>
+
+        <!-- Encrypted Keys -->
+        <div class="bento-item glow-border">
+          <div class="bento-icon">🔒</div>
+          <h3>密钥加密存储</h3>
+          <p>AES-256-GCM 军用级加密，所有厂商的 API Key 加密后存储在你自己的电脑上，绝不离开你的机器。加密密钥你自己管，就算数据库泄露也解不开你的 API 密钥。</p>
+        </div>
+
+        <!-- Fusion -->
+        <div class="bento-item col-2 glow-border">
+          <div class="bento-icon">🧠</div>
+          <h3>Fusion 多模型融合</h3>
+          <p>同时调动多个模型并行回答，由 Judge 模型综合各答案，输出一个最佳结果。不同模型的不同视角，融合成一份更完整、更准确的答案——不是简单的投票，是真正的语义综合。</p>
+          <div class="bento-code-block">
+            <span class="c"># 一行启用多模型融合</span><br>
+            <span class="hl">model=</span><span class="hl2">"fusion"</span>       <span class="c">← 自动选 4 个模型并行</span><br>
+            <span class="hl">strategy=</span><span class="hl2">"synthesize"</span> <span class="c">← Judge 综合答案</span><br>
+            <span class="hl">strategy=</span><span class="hl2">"best_of"</span>    <span class="c">← 取最长最优回答</span>
+          </div>
+        </div>
+
+        <!-- Streaming & Tools -->
+        <div class="bento-item glow-border">
+          <div class="bento-icon">⚡</div>
+          <h3>流式 & 工具调用</h3>
+          <p>完整支持 SSE 流式输出和 OpenAI function calling。tool_choice 透传，parallel_tool_calls 无压力。</p>
+        </div>
+
+        <!-- Lightweight -->
+        <div class="bento-item glow-border">
+          <div class="bento-icon">🔋</div>
+          <h3>极致轻量</h3>
+          <p>空闲时仅 40MB 内存，SQLite 单文件，零外部依赖。适合任何机器，从树莓派到工作站都能跑。</p>
+        </div>
+
+        <!-- Compat API -->
+        <div class="bento-item col-2 glow-border">
+          <div class="bento-icon">🔧</div>
+          <h3>双 API 兼容</h3>
+          <p>OpenAI <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.88em;color:#00b8d4;">/v1/chat/completions</code> 和 Anthropic <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.88em;color:#00b8d4;">/v1/messages</code> 双协议支持。Claude Code 直接改 ANTHROPIC_BASE_URL 就能用，Python / cURL / 任何 OpenAI SDK 客户端零修改接入。</p>
+          <div class="bento-code-block">
+            <span class="c"># Claude Code 接入 —— 两行环境变量</span><br>
+            <span class="hl">export</span> ANTHROPIC_BASE_URL=<span class="hl2">http://localhost:2210</span><br>
+            <span class="hl">export</span> ANTHROPIC_AUTH_TOKEN=<span class="hl2">llmrouter-xxxx</span><br>
+            claude
+          </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div class="bento-item glow-border">
+          <div class="bento-icon">📊</div>
+          <h3>管理面板</h3>
+          <p>React + TailwindCSS Web UI：管密钥、调路由优先级、看分析数据、跑 Playground 实时测试。全中文界面，一目了然。</p>
+        </div>
+
+        <!-- Context Handoff -->
+        <div class="bento-item glow-border">
+          <div class="bento-icon">📝</div>
+          <h3>上下文保持</h3>
+          <p>模型切换时自动注入对话历史摘要，确保 sticky session 不会因厂商切换导致模型「失忆」。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Providers -->
+  <section class="section" id="providers">
+    <div class="container">
+      <div class="section-label">接入生态</div>
+      <h2 class="section-title">你的所有模型，<br>一个都别落下。</h2>
+      <p class="section-desc">
+        无论海外前沿模型还是国产大模型，全部无缝接入。还支持任何 OpenAI 兼容的自定义接口——Ollama / vLLM / LM Studio 都行。
+      </p>
+      <div class="providers-scroll">
+        <div class="providers-track" id="providers-track">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Detailed Features -->
+  <section class="section" id="features-detail" style="padding-bottom: 0;">
+    <div class="container">
+      <div class="section-label">功能详解</div>
+      <h2 class="section-title">每一层都经过<br>精心设计。</h2>
+      <p class="section-desc">
+        从智能路由到自动故障转移，从密钥加密到模型 Fusion——LLMRouter 的每一个功能模块都经过严格设计，在你的电脑上安静运转，让 AI 调用这件事变得简单。
+      </p>
+    </div>
+  </section>
+
+  <!-- Feature 1: Smart Routing -->
+  <div class="feature-block">
+    <div class="feature-inner">
+      <div class="feature-text">
+        <div class="section-label">智能路由引擎</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <h3 class="feature-title">帮你挑最优解<br>而不是随便挑一个</h3>
+        <p class="feature-desc">
+          LLMRouter 的路由引擎会根据模型优先级、请求类型（文本/视觉/工具调用）和历史成功率，自动为每个请求选择最合适的厂商。你定义优先级，引擎负责执行——在错误时自动降级，在恢复时自动升级。
+        </p>
+        <ul class="feature-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>按优先级自动路由，支持 fallback 链</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>按请求能力过滤（视觉、工具调用、流式）</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>实时健康检查，自动剔除异常厂商</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>权重分配，灵活控制流量比例</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="fv-card">
+          <div class="fv-card-header">
+            <div class="fv-dot r"></div><div class="fv-dot y"></div><div class="fv-dot g"></div>
+            <span class="fv-card-title">route-engine — 实时路由表</span>
+          </div>
+          <div class="route-table">
+            <div class="route-row active">
+              <div class="route-provider">
+                <div class="route-icon" style="background:linear-gradient(135deg,#4285f4,#1a73e8);">G</div>
+                <div><div class="route-name">Google · gemini-2.0-flash</div><div class="route-meta">priority: 100 · latency: 35ms · 99.99%</div></div>
+              </div>
+              <div class="route-status ok">主路由</div>
+            </div>
+            <div class="route-row">
+              <div class="route-provider">
+                <div class="route-icon" style="background:linear-gradient(135deg,#f55036,#c2410c);">G</div>
+                <div><div class="route-name">Groq · llama-3.3-70b</div><div class="route-meta">priority: 90 · latency: 28ms · 99.95%</div></div>
+              </div>
+              <div class="route-status fallback">备用</div>
+            </div>
+            <div class="route-row">
+              <div class="route-provider">
+                <div class="route-icon" style="background:linear-gradient(135deg,#6366f1,#4f46e5);">O</div>
+                <div><div class="route-name">OpenRouter · gpt-4o</div><div class="route-meta">priority: 80 · latency: 58ms · 99.97%</div></div>
+              </div>
+              <div class="route-status ok">运行中</div>
+            </div>
+            <div class="route-row">
+              <div class="route-provider">
+                <div class="route-icon" style="background:linear-gradient(135deg,#10b981,#059669);">S</div>
+                <div><div class="route-name">SiliconFlow · deepseek-v3</div><div class="route-meta">priority: 70 · latency: 120ms · 99.8%</div></div>
+              </div>
+              <div class="route-status fallback">备用</div>
+            </div>
+            <div class="route-row">
+              <div class="route-provider">
+                <div class="route-icon" style="background:linear-gradient(135deg,#ccc,#999);">X</div>
+                <div><div class="route-name">某厂商 · 已超时</div><div class="route-meta">priority: 60 · status: unhealthy</div></div>
+              </div>
+              <div class="route-status standby">已移除</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature 2: Failover -->
+  <div class="feature-block">
+    <div class="feature-inner">
+      <div class="feature-text">
+        <div class="section-label">自动故障转移</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+        </div>
+        <h3 class="feature-title">厂商挂了？<br>0.5 秒内自动切换</h3>
+        <p class="feature-desc">
+          当一个厂商返回 5xx 错误或超时，LLMRouter 立刻将请求转发给 fallback 链中的下一个厂商。整个过程对客户端完全透明——你的用户不会看到任何中断，你的代码不需要 try-catch 切换逻辑。
+        </p>
+        <ul class="feature-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>5xx 错误自动重试下一个厂商</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>超时自动降级，可配置超时阈值</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>熔断机制：连续失败自动隔离</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>恢复后自动重新加入路由池</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="fv-card">
+          <div class="fv-card-header">
+            <div class="fv-dot r"></div><div class="fv-dot y"></div><div class="fv-dot g"></div>
+            <span class="fv-card-title">failover — 故障转移流程</span>
+          </div>
+          <div class="failover-visual">
+            <div class="fo-step">
+              <div class="fo-step-num" style="background:#4285f4;">1</div>
+              <div class="fo-step-text">请求到达 → <strong>Google gemini-2.0-flash</strong>（优先级 100）</div>
+            </div>
+            <div class="fo-arrow"></div>
+            <div class="fo-step">
+              <div class="fo-step-num" style="background:#ef4444;">2</div>
+              <div class="fo-step-text"><strong>Google 返回 503</strong> → 触发故障转移</div>
+            </div>
+            <div class="fo-arrow"></div>
+            <div class="fo-step">
+              <div class="fo-step-num" style="background:#f59e0b;">3</div>
+              <div class="fo-step-text">自动重试 → <strong>Groq llama-3.3-70b</strong>（fallback）</div>
+            </div>
+            <div class="fo-arrow"></div>
+            <div class="fo-step">
+              <div class="fo-step-num" style="background:#00b8d4;">4</div>
+              <div class="fo-step-text">请求成功 → <strong>客户端无感知</strong> · 总耗时 +28ms</div>
+            </div>
+            <div class="fo-arrow"></div>
+            <div class="fo-step">
+              <div class="fo-step-num" style="background:#7c3aed;">5</div>
+              <div class="fo-step-text">Google 恢复 → <strong>自动重新加入</strong>路由池</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature 3: OpenAI Compatible API -->
+  <div class="feature-block">
+    <div class="feature-inner">
+      <div class="feature-text">
+        <div class="section-label">OpenAI 兼容</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </div>
+        <h3 class="feature-title">一行代码不改<br>直接接入</h3>
+        <p class="feature-desc">
+          LLMRouter 暴露完全兼容 OpenAI 的 <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#00b8d4;">/v1/chat/completions</code> 接口。把你现有代码里的 <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#00b8d4;">base_url</code> 改成 LLMRouter 地址就行——SDK、LangChain、AutoGen、Cursor，全都能用。
+        </p>
+        <ul class="feature-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>OpenAI Python / Node.js SDK 直接可用</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>流式输出（SSE）完整支持</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>函数调用 / 工具调用兼容</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>视觉多模态请求透传</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="fv-card">
+          <div class="fv-card-header">
+            <div class="fv-dot r"></div><div class="fv-dot y"></div><div class="fv-dot g"></div>
+            <span class="fv-card-title">quickstart.py — 三行接入</span>
+          </div>
+          <div class="code-block">
+            <div class="code-line"><span class="code-ln">1</span><span class="code-content"><span class="code-kw">from</span> openai <span class="code-kw">import</span> OpenAI</span></div>
+            <div class="code-line"><span class="code-ln">2</span><span class="code-content"></span></div>
+            <div class="code-line"><span class="code-ln">3</span><span class="code-content"><span class="code-cmt"># 只改这一行，其他代码全部不变</span></span></div>
+            <div class="code-line"><span class="code-ln">4</span><span class="code-content"><span class="code-var">client</span> = <span class="code-fn">OpenAI</span>(</span></div>
+            <div class="code-line"><span class="code-ln">5</span><span class="code-content">    base_url=<span class="code-str">"http://localhost:2210/v1"</span>,</span></div>
+            <div class="code-line"><span class="code-ln">6</span><span class="code-content">    api_key=<span class="code-str">"llmrouter-xxxxxxxx"</span></span></div>
+            <div class="code-line"><span class="code-ln">7</span><span class="code-content">)</span></div>
+            <div class="code-line"><span class="code-ln">8</span><span class="code-content"></span></div>
+            <div class="code-line"><span class="code-ln">9</span><span class="code-content"><span class="code-cmt"># 就这样，你现在有了 26+ 厂商</span></span></div>
+            <div class="code-line"><span class="code-ln">10</span><span class="code-content"><span class="code-var">resp</span> = client.chat.completions.<span class="code-fn">create</span>(</span></div>
+            <div class="code-line"><span class="code-ln">11</span><span class="code-content">    model=<span class="code-str">"auto"</span>,</span></div>
+            <div class="code-line"><span class="code-ln">12</span><span class="code-content">    messages=[{<span class="code-str">"role"</span>: <span class="code-str">"user"</span>, <span class="code-str">"content"</span>: <span class="code-str">"你好"</span>}]</span></div>
+            <div class="code-line"><span class="code-ln">13</span><span class="code-content">)</span></div>
+            <div class="code-line"><span class="code-ln">14</span><span class="code-content"><span class="code-fn">print</span>(resp.choices[<span class="code-str">0</span>].message.content)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature 4: Model Fusion -->
+  <div class="feature-block">
+    <div class="feature-inner">
+      <div class="feature-text">
+        <div class="section-label">模型 Fusion</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m17.07-7.07l-4.24 4.24m-3.66 3.66l-4.24 4.24m0-12.14l4.24 4.24m3.66 3.66l4.24 4.24"/></svg>
+        </div>
+        <h3 class="feature-title">多模型并行<br>一个更好的答案</h3>
+        <p class="feature-desc">
+          Fusion 模式让一个请求同时发给多个厂商，由 Judge 模型选出最佳回答。适合需要高准确率的场景——比如代码生成、复杂推理。你可以配置参与 Fusion 的模型列表和 Judge 策略。
+        </p>
+        <ul class="feature-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>多模型并行请求，结果聚合</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>内置 Judge 模型自动选优</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>支持自定义评分维度和权重</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>可视化对比各模型回答质量</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="fv-card">
+          <div class="fv-card-header">
+            <div class="fv-dot r"></div><div class="fv-dot y"></div><div class="fv-dot g"></div>
+            <span class="fv-card-title">fusion — 多模型并行合成</span>
+          </div>
+          <div class="fusion-visual">
+            <div class="fu-node">
+              <div class="fu-node-icon" style="background:linear-gradient(135deg,#4285f4,#1a73e8);">G</div>
+              <div><strong>Google</strong> gemini-2.0-flash → "回答 A"</div>
+            </div>
+            <div class="fu-node">
+              <div class="fu-node-icon" style="background:linear-gradient(135deg,#f55036,#c2410c);">G</div>
+              <div><strong>Groq</strong> llama-3.3-70b → "回答 B"</div>
+            </div>
+            <div class="fu-node">
+              <div class="fu-node-icon" style="background:linear-gradient(135deg,#6366f1,#4f46e5);">O</div>
+              <div><strong>OpenRouter</strong> gpt-4o → "回答 C"</div>
+            </div>
+            <div class="fu-merge">
+              <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:0.5rem;">↓ 并行结果汇聚 ↓</div>
+              <div class="fu-merge-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </div>
+              <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.5rem;">Judge 模型评估选优</div>
+            </div>
+            <div class="fu-node" style="background:linear-gradient(135deg,rgba(0,229,255,0.08),rgba(124,58,237,0.06));border:1px solid rgba(0,229,255,0.2);">
+              <div class="fu-node-icon" style="background:var(--gradient-main);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+              <div><strong>最终输出</strong> → 回答 B（评分 9.2/10）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature 5: AES-256 Encryption -->
+  <div class="feature-block">
+    <div class="feature-inner">
+      <div class="feature-text">
+        <div class="section-label">安全加密</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h3 class="feature-title">密钥不出本机<br>加密存储在本地</h3>
+        <p class="feature-desc">
+          所有厂商的 API Key 经 AES-256-GCM 加密后存储在你电脑上的本地 SQLite 数据库中。密钥不经过任何云端中转，不以明文落盘。加密密钥由你自己掌管，就算数据库文件被拷走也解不开。
+        </p>
+        <ul class="feature-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>AES-256-GCM 军用级加密</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>密钥永不以明文落盘</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>加密密钥由你掌管，可随时轮换</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>所有数据存在本地 SQLite</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="fv-card">
+          <div class="fv-card-header">
+            <div class="fv-dot r"></div><div class="fv-dot y"></div><div class="fv-dot g"></div>
+            <span class="fv-card-title">encryption — 密钥加密流程</span>
+          </div>
+          <div class="encrypt-visual">
+            <div class="enc-flow">
+              <div class="enc-box">
+                <div class="enc-box-icon">🔑</div>
+                <div class="enc-box-label">API Key 明文</div>
+                <div class="enc-box-sub">sk-xxx...</div>
+              </div>
+              <div class="enc-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </div>
+              <div class="enc-box">
+                <div class="enc-box-icon">🔐</div>
+                <div class="enc-box-label">AES-256 加密</div>
+                <div class="enc-box-sub">GCM mode</div>
+              </div>
+              <div class="enc-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </div>
+              <div class="enc-box">
+                <div class="enc-box-icon">💾</div>
+                <div class="enc-box-label">本地存储</div>
+                <div class="enc-box-sub">SQLite (encrypted)</div>
+              </div>
+            </div>
+            <div style="margin-top:1rem;padding:0.875rem;background:rgba(16,185,129,0.06);border-radius:10px;text-align:center;font-size:0.78rem;color:#059669;">
+              <strong>密钥全程不出本机</strong> · 无云端中转 · 无第三方截获
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature 6: Lightweight -->
+  <div class="feature-block">
+    <div class="feature-inner">
+      <div class="feature-text">
+        <div class="section-label">轻量高效</div>
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </div>
+        <h3 class="feature-title">40MB 内存<br>跑在树莓派上也行</h3>
+        <p class="feature-desc">
+          LLMRouter 用 Node.js 写的，空闲时只占 40MB 内存。不需要 Docker，不需要数据库服务，一个进程跑起来就行。从 Mac mini 到树莓派，从云服务器到你手边的笔记本，到处都能跑。
+        </p>
+        <ul class="feature-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>空闲内存 ~40MB，极低资源占用</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>无需 Docker，单进程运行</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>内嵌 SQLite，零外部依赖</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>macOS / Linux / Windows 全平台</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="fv-card">
+          <div class="fv-card-header">
+            <div class="fv-dot r"></div><div class="fv-dot y"></div><div class="fv-dot g"></div>
+            <span class="fv-card-title">system — 资源监控</span>
+          </div>
+          <div style="padding:1.5rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+              <div style="padding:1.25rem;background:var(--bg-elevated);border-radius:12px;text-align:center;">
+                <div style="font-family:'Clash Display',sans-serif;font-size:2rem;font-weight:600;background:var(--gradient-main);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">40MB</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">空闲内存</div>
+              </div>
+              <div style="padding:1.25rem;background:var(--bg-elevated);border-radius:12px;text-align:center;">
+                <div style="font-family:'Clash Display',sans-serif;font-size:2rem;font-weight:600;background:var(--gradient-main);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">&lt;1%</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">空闲 CPU</div>
+              </div>
+              <div style="padding:1.25rem;background:var(--bg-elevated);border-radius:12px;text-align:center;">
+                <div style="font-family:'Clash Display',sans-serif;font-size:2rem;font-weight:600;background:var(--gradient-main);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">0</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">外部依赖</div>
+              </div>
+              <div style="padding:1.25rem;background:var(--bg-elevated);border-radius:12px;text-align:center;">
+                <div style="font-family:'Clash Display',sans-serif;font-size:2rem;font-weight:600;background:var(--gradient-main);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">1</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">进程即可</div>
+              </div>
+            </div>
+            <div style="margin-top:1rem;padding:0.875rem;background:rgba(0,184,212,0.06);border-radius:10px;text-align:center;font-size:0.78rem;color:var(--cyan);">
+              <strong>从树莓派到工作站</strong> · 到处都能跑
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security Section -->
+  <section class="section" id="security" style="background: linear-gradient(180deg, #f0eff8 0%, #f8f7fc 100%); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);">
+    <div class="container">
+      <div class="section-label">安全至上</div>
+      <h2 class="section-title">你的密钥，<br>只在你的电脑上。</h2>
+      <p class="section-desc">
+        LLMRouter 安装在你自己的电脑上运行，不存在云端中转。所有厂商的 API 密钥经过 AES-256 加密后存储在本地 SQLite 数据库中，绝不离开你的机器。代码经过严格测试，稳定可靠。
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 4rem;">
+        <div style="padding: 2.5rem; background: #fff; border: 1px solid var(--border-subtle); border-radius: 18px; box-shadow: var(--shadow-card); transition: all 0.35s ease; position: relative; overflow: hidden;" class="glow-border">
+          <div style="position: absolute; top: -30%; right: -20%; width: 300px; height: 300px; background: radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%); pointer-events: none;"></div>
+          <div class="bento-icon" style="position: relative; z-index: 1;">🏠</div>
+          <h3 style="font-family: 'Clash Display', system-ui, sans-serif; font-size: 1.3rem; font-weight: 600; margin-bottom: 0.625rem; letter-spacing: -0.01em; color: #0a0a14; position: relative; z-index: 1;">本地运行</h3>
+          <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.65; position: relative; z-index: 1;">LLMRouter 安装在你自己的电脑上，从树莓派到工作站都能跑。所有请求在你的本地处理，数据不经过任何第三方服务器。</p>
+        </div>
+        <div style="padding: 2.5rem; background: #fff; border: 1px solid var(--border-subtle); border-radius: 18px; box-shadow: var(--shadow-card); transition: all 0.35s ease; position: relative; overflow: hidden;" class="glow-border">
+          <div style="position: absolute; top: -30%; right: -20%; width: 300px; height: 300px; background: radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%); pointer-events: none;"></div>
+          <div class="bento-icon" style="position: relative; z-index: 1;">🔐</div>
+          <h3 style="font-family: 'Clash Display', system-ui, sans-serif; font-size: 1.3rem; font-weight: 600; margin-bottom: 0.625rem; letter-spacing: -0.01em; color: #0a0a14; position: relative; z-index: 1;">密钥不出本机</h3>
+          <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.65; position: relative; z-index: 1;">所有厂商的 API Key 经 AES-256-GCM 加密后存储在本地数据库中，绝不以明文落盘，绝不离开你的机器。加密密钥由你自己掌管。</p>
+        </div>
+        <div style="padding: 2.5rem; background: #fff; border: 1px solid var(--border-subtle); border-radius: 18px; box-shadow: var(--shadow-card); transition: all 0.35s ease; position: relative; overflow: hidden;" class="glow-border">
+          <div style="position: absolute; top: -30%; right: -20%; width: 300px; height: 300px; background: radial-gradient(circle, rgba(0,229,255,0.05) 0%, transparent 70%); pointer-events: none;"></div>
+          <div class="bento-icon" style="position: relative; z-index: 1;">🧪</div>
+          <h3 style="font-family: 'Clash Display', system-ui, sans-serif; font-size: 1.3rem; font-weight: 600; margin-bottom: 0.625rem; letter-spacing: -0.01em; color: #0a0a14; position: relative; z-index: 1;">严格测试</h3>
+          <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.65; position: relative; z-index: 1;">代码经过严格测试，从路由引擎到故障转移、从加密模块到流式输出，每个核心模块都有完整测试覆盖，稳定可靠。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Deployment Guide -->
+  <section class="section" id="deploy" style="padding-bottom: 0;">
+    <div class="container">
+      <div class="section-label">部署指南</div>
+      <h2 class="section-title">三分钟，<br>从零到运行。</h2>
+      <p class="section-desc">
+        LLMRouter 安装在你自己的电脑上，不需要 Docker，不需要外部数据库。解压、启动、配置——三步搞定。
+      </p>
+    </div>
+  </section>
+
+  <!-- Step 1: Install -->
+  <div class="step-section">
+    <div class="container">
+      <div class="step-header">
+        <div class="step-number">1</div>
+        <div class="step-header-text">
+          <div class="step-label">安装</div>
+          <h3 class="step-title">解压项目 & 一键启动</h3>
+        </div>
+      </div>
+      <p class="step-desc">
+        确保你的电脑已安装 Node.js 20+。解压下载的 LLMRouter.zip，然后运行一键启动脚本——脚本会自动安装依赖、生成配置、启动服务，整个过程不到两分钟。
+      </p>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+          <span class="terminal-title">Terminal — 安装 LLMRouter</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="term-comment"># 1. 解压项目</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">unzip</span> LLMRouter.zip</div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">cd</span> <span class="term-path">llmrouter</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># 2. 一键启动（自动安装依赖 + 生成配置 + 启动服务）</span></div>
+          <div><span class="term-comment"># macOS / Linux</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">./start.sh</span> start</div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># Windows</span></div>
+          <div><span class="term-prompt">&gt;</span> <span class="term-cmd">start.bat</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-out">  ✓ Node.js v22.x | npm 10.x</span></div>
+          <div><span class="term-out">  ⏳ 首次运行 — 正在安装依赖...</span></div>
+          <div><span class="term-out">  ✓ 依赖安装完成！</span></div>
+          <div><span class="term-out">  ✓ .env 已自动生成</span></div>
+          <div><span class="term-success">  🚀 正在启动 LLMRouter...</span></div>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(16,185,129,0.1);">📦</div>
+          <div class="info-card-title">Node.js 20+</div>
+          <div class="info-card-desc">唯一的前置依赖。推荐使用 LTS 版本。</div>
+          <div class="info-card-tag" style="background:rgba(16,185,129,0.1);color:#059669;">必需</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(0,184,212,0.1);">💻</div>
+          <div class="info-card-title">全平台支持</div>
+          <div class="info-card-desc">macOS、Linux、Windows 均可运行。无平台限制。</div>
+          <div class="info-card-tag" style="background:rgba(0,184,212,0.1);color:#0097a7;">跨平台</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(124,58,237,0.1);">⚡</div>
+          <div class="info-card-title">无需 Docker</div>
+          <div class="info-card-desc">单进程运行，不需要容器、不需要外部数据库服务。</div>
+          <div class="info-card-tag" style="background:rgba(124,58,237,0.1);color:#7c3aed;">零依赖</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Configure -->
+  <div class="step-section">
+    <div class="container">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-header-text">
+          <div class="step-label">配置</div>
+          <h3 class="step-title">配置环境变量</h3>
+        </div>
+      </div>
+      <p class="step-desc">
+        <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#00b8d4;">.env</code> 文件在首次运行 <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#00b8d4;">start.sh</code> 时自动生成，包含随机加密密钥和默认端口。你也可以手动编辑——所有 API Key 加密存储在本地 SQLite，不会明文出现在 .env 里。
+      </p>
+      <div class="two-col">
+        <div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+              <span class="terminal-title">Terminal — 编辑配置</span>
+            </div>
+            <div class="terminal-body">
+              <div><span class="term-comment"># .env 已在首次启动时自动生成</span></div>
+              <div><span class="term-comment"># 如需修改，编辑即可</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">nano</span> .env</div>
+              <div>&nbsp;</div>
+              <div><span class="term-comment"># 或者用你喜欢的编辑器</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">code</span> .env</div>
+              <div>&nbsp;</div>
+              <div><span class="term-comment"># 重新生成加密密钥</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">node</span> -e <span class="term-out">"console.log(require('crypto').randomBytes(32).toString('hex'))"</span></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="config-card">
+            <div class="config-header">
+              <div class="term-dot r" style="width:10px;height:10px;border-radius:50%;background:#ff5f57;"></div>
+              <div class="term-dot y" style="width:10px;height:10px;border-radius:50%;background:#febc2e;"></div>
+              <div class="term-dot g" style="width:10px;height:10px;border-radius:50%;background:#28c840;"></div>
+              <span class="config-title">.env — 环境配置</span>
+            </div>
+            <div class="config-body">
+              <div><span class="cfg-cmt"># 后端 API 服务端口（默认 2210）</span></div>
+              <div><span class="cfg-key">PORT</span>=<span class="cfg-num">2210</span></div>
+              <div>&nbsp;</div>
+              <div><span class="cfg-cmt"># AES-256-GCM 加密密钥（自动生成）</span></div>
+              <div><span class="cfg-key">ENCRYPTION_KEY</span>=<span class="cfg-str">a1b2c3d4e5f6...64char-hex</span></div>
+              <div>&nbsp;</div>
+              <div><span class="cfg-cmt"># 请求分析数据保留天数</span></div>
+              <div><span class="cfg-key">REQUEST_ANALYTICS_RETENTION_DAYS</span>=<span class="cfg-num">90</span></div>
+              <div>&nbsp;</div>
+              <div><span class="cfg-cmt"># 响应缓存（可选，默认关闭）</span></div>
+              <div><span class="cfg-key">RESPONSE_CACHE</span>=<span class="cfg-bool">false</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tip-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <div>
+          <strong>提示：</strong>API Key 不需要在 .env 中配置。首次启动后，终端会显示一次性 Setup Code，用它在管理面板完成初始化。之后通过面板添加厂商密钥，所有密钥经 AES-256 加密后存储在本地 SQLite 数据库中。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Start -->
+  <div class="step-section">
+    <div class="container">
+      <div class="step-header">
+        <div class="step-number">3</div>
+        <div class="step-header-text">
+          <div class="step-label">启动</div>
+          <h3 class="step-title">启动服务</h3>
+        </div>
+      </div>
+      <p class="step-desc">
+        一条命令启动。start.sh 会同时启动后端 API 服务（端口 2210）和前端管理面板（端口 10130）。启动后在浏览器打开管理面板，使用终端显示的 Setup Code 完成初始化，添加你的厂商 API Key 即可开始使用。
+      </p>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+          <span class="terminal-title">Terminal — 启动 LLMRouter</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="term-comment"># macOS / Linux</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">./start.sh</span> start</div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># Windows</span></div>
+          <div><span class="term-prompt">&gt;</span> <span class="term-cmd">start.bat</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-out">  ✓ Node.js v22.x | npm 10.x</span></div>
+          <div><span class="term-out">  ✓ 依赖已就绪</span></div>
+          <div><span class="term-out">  ✓ .env 已存在</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-out">  🚀 正在启动 LLMRouter...</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-success">  > server: Server running on port 2210</span></div>
+          <div><span class="term-success">  > client: Local: http://localhost:10130/</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-out">  访问地址:</span></div>
+          <div><span class="term-out">    管理面板（前端）: http://localhost:10130</span></div>
+          <div><span class="term-out">    后端 API 服务:    http://localhost:2210</span></div>
+          <div><span class="term-out">    API 接口:         http://localhost:2210/v1/chat/completions</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-warn">  ⚡ 首次设置码: 8K3M-9P2Q-X7R4</span></div>
+          <div><span class="term-out">  打开 http://localhost:10130 输入设置码完成初始化。</span></div>
+        </div>
+      </div>
+      <div class="warn-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div>
+          <strong>注意：</strong>首次启动后，终端会显示一次性 Setup Code。请打开 http://localhost:10130 输入设置码完成初始化，然后添加你的厂商 API Key。所有密钥将经 AES-256 加密后存储在本地，绝不离开你的机器。
+        </div>
+      </div>
+      <div class="info-grid" style="margin-top:2.5rem;">
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(16,185,129,0.1);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="info-card-title">API 网关 (:2210)</div>
+          <div class="info-card-desc">OpenAI 兼容接口 <code style="font-family:'JetBrains Mono',monospace;font-size:0.8em;color:#00b8d4;">/v1/chat/completions</code></div>
+          <div class="status-badge status-running" style="margin-top:0.75rem;"><span class="status-dot"></span>运行中</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(0,184,212,0.1);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00b8d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <div class="info-card-title">管理面板 (:10130)</div>
+          <div class="info-card-desc">可视化管理厂商、密钥、路由配置</div>
+          <div class="status-badge status-running" style="margin-top:0.75rem;"><span class="status-dot"></span>运行中</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(124,58,237,0.1);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <div class="info-card-title">本地数据库</div>
+          <div class="info-card-desc">SQLite 加密存储，所有数据不出本机</div>
+          <div class="info-card-tag" style="background:rgba(124,58,237,0.1);color:#7c3aed;">AES-256 加密</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Background Service -->
+  <div class="step-section">
+    <div class="container">
+      <div class="step-header">
+        <div class="step-number">4</div>
+        <div class="step-header-text">
+          <div class="step-label">后台运行</div>
+          <h3 class="step-title">配置为系统服务（可选）</h3>
+        </div>
+      </div>
+      <p class="step-desc">
+        如果你希望 LLMRouter 开机自启、后台常驻，可以配置为系统服务。先执行 <code style="background:rgba(0,229,255,0.1);padding:0.15em 0.4em;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#00b8d4;">npm run build</code> 构建生产版本，然后用 systemd / launchd / PM2 管理进程。
+      </p>
+      <div class="two-col">
+        <div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+              <span class="terminal-title">Terminal — systemd 配置</span>
+            </div>
+            <div class="terminal-body">
+              <div><span class="term-comment"># 先构建生产版本</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">npm</span> run build</div>
+              <div>&nbsp;</div>
+              <div><span class="term-comment"># 创建 service 文件</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">sudo</span> nano /etc/systemd/system/llmrouter.service</div>
+              <div>&nbsp;</div>
+              <div><span class="term-comment"># 启用并启动</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">sudo</span> systemctl daemon-reload</div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">sudo</span> systemctl enable llmrouter</div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">sudo</span> systemctl start llmrouter</div>
+              <div>&nbsp;</div>
+              <div><span class="term-comment"># 检查状态</span></div>
+              <div><span class="term-prompt">$</span> <span class="term-cmd">sudo</span> systemctl status llmrouter</div>
+              <div><span class="term-success">● llmrouter.service - LLMRouter API Gateway</span></div>
+              <div><span class="term-out">   Active: active (running)</span></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="config-card">
+            <div class="config-header">
+              <div class="term-dot r" style="width:10px;height:10px;border-radius:50%;background:#ff5f57;"></div>
+              <div class="term-dot y" style="width:10px;height:10px;border-radius:50%;background:#febc2e;"></div>
+              <div class="term-dot g" style="width:10px;height:10px;border-radius:50%;background:#28c840;"></div>
+              <span class="config-title">llmrouter.service</span>
+            </div>
+            <div class="config-body">
+              <div><span class="cfg-key">[Unit]</span></div>
+              <div>Description=LLMRouter API Gateway</div>
+              <div>After=network.target</div>
+              <div>&nbsp;</div>
+              <div><span class="cfg-key">[Service]</span></div>
+              <div>Type=simple</div>
+              <div>User=<span class="cfg-str">your-username</span></div>
+              <div>WorkingDirectory=<span class="cfg-str">/path/to/llmrouter</span></div>
+              <div>ExecStart=<span class="cfg-str">/usr/bin/npm</span> start</div>
+              <div>Restart=on-failure</div>
+              <div>RestartSec=<span class="cfg-num">5</span></div>
+              <div>&nbsp;</div>
+              <div><span class="cfg-key">[Install]</span></div>
+              <div>WantedBy=multi-user.target</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tip-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <div>
+          <strong>macOS 用户：</strong>使用 launchd（LaunchAgent plist）实现同样的效果。Windows 用户推荐使用 PM2：&nbsp;<code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#00b8d4;">npm run build && pm2 start "node server/dist/index.js" --name llmrouter</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5: Stop -->
+  <div class="step-section">
+    <div class="container">
+      <div class="step-header">
+        <div class="step-number">5</div>
+        <div class="step-header-text">
+          <div class="step-label">关闭</div>
+          <h3 class="step-title">停止服务</h3>
+        </div>
+      </div>
+      <p class="step-desc">
+        根据你的启动方式，选择对应的停止方法。所有数据已持久化在本地 SQLite，重启后不会丢失。
+      </p>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+          <span class="terminal-title">Terminal — 停止 LLMRouter</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="term-comment"># 方式一：使用 start.sh（推荐）</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">./start.sh</span> stop</div>
+          <div><span class="term-out">  ⏳ 正在停止 LLMRouter...</span></div>
+          <div><span class="term-success">  ✓ LLMRouter 已停止</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># 方式二：前台运行 — 直接 Ctrl+C</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">./start.sh</span> start</div>
+          <div><span class="term-warn">^C</span></div>
+          <div><span class="term-out">  👋 LLMRouter 已退出</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># 方式三：systemd 服务</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">sudo</span> systemctl stop llmrouter</div>
+          <div><span class="term-success">✓ Service stopped.</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># 方式四：PM2（Windows / 跨平台）</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">pm2</span> stop llmrouter</div>
+          <div><span class="term-success">✓ Process stopped.</span></div>
+          <div>&nbsp;</div>
+          <div><span class="term-comment"># 方式五：直接杀进程（按端口）</span></div>
+          <div><span class="term-prompt">$</span> <span class="term-cmd">lsof</span> -ti:2210 -ti:10130 | xargs kill</div>
+          <div><span class="term-success">✓ Processes killed.</span></div>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(239,68,68,0.1);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <div class="info-card-title">优雅关闭</div>
+          <div class="info-card-desc">./start.sh stop 或 Ctrl+C 会等待当前请求处理完毕后再退出。</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(124,58,237,0.1);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <div class="info-card-title">数据安全</div>
+          <div class="info-card-desc">所有配置和密钥持久化在本地 SQLite，重启后自动恢复。</div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-icon" style="background:rgba(16,185,129,0.1);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+          </div>
+          <div class="info-card-title">快速重启</div>
+          <div class="info-card-desc">直接 ./start.sh restart 或 ./start.sh start 即可恢复服务。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <section class="cta-section section">
+    <div class="container">
+      <h2 class="section-title">把散落的 API 密钥，<br>收进一个接口。</h2>
+      <p class="section-desc" style="margin: 1rem auto 0;">
+        安装在你自己的电脑上 · 所有厂商 API Key 加密存储在本地 · 代码经过严格测试 · 一行代码不改
+      </p>
+      <a href="#deploy" class="btn-primary">
+        <span>立即开始使用</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+      <div class="cta-meta">
+        <span class="cta-meta-item">⚡ Node.js 20+</span>
+        <span class="cta-meta-item">🖥️ macOS / Linux / Windows</span>
+        <span class="cta-meta-item">🔒 AES-256 加密存储</span>
+        <span class="cta-meta-item">🧪 代码经过严格测试</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-copy">&copy; 2026 LLMRouter. Built by kevinlee.</div>
+    <div class="footer-links">
+      <a href="#features-detail" class="footer-link">功能</a>
+      <a href="#deploy" class="footer-link">部署</a>
+      <a href="#security" class="footer-link">安全</a>
+    </div>
+  </footer>
+
+  <script>
+    // ── GSAP + ScrollTrigger ──
+    gsap.registerPlugin(ScrollTrigger);
+
+    // ── Navigation Scroll Effect ──
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 50);
+    });
+
+    // ── Smooth Section Reveal ──
+    document.querySelectorAll('.section').forEach(section => {
+      gsap.fromTo(section,
+        { opacity: 0, y: 40 },
+        {
+          opacity: 1, y: 0,
+          duration: 0.8,
+          ease: 'power3.out',
+          scrollTrigger: {
+            trigger: section,
+            start: 'top 80%',
+            toggleActions: 'play none none reverse'
+          }
+        }
+      );
+    });
+
+    // ── Bento Items Stagger ──
+    gsap.fromTo('.bento-item',
+      { opacity: 0, y: 30 },
+      {
+        opacity: 1, y: 0,
+        duration: 0.6,
+        stagger: 0.08,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: '.bento-grid',
+          start: 'top 75%',
+          toggleActions: 'play none none reverse'
+        }
+      }
+    );
+
+    // ── Pain Cards Stagger ──
+    gsap.fromTo('.pain-card',
+      { opacity: 0, y: 30 },
+      {
+        opacity: 1, y: 0,
+        duration: 0.5,
+        stagger: 0.06,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: '.pain-grid',
+          start: 'top 75%',
+          toggleActions: 'play none none reverse'
+        }
+      }
+    );
+
+    // ── Mouse tracking for pain card glow ──
+    document.querySelectorAll('[data-mouse]').forEach(card => {
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        card.style.setProperty('--mouse-x', `${x}%`);
+        card.style.setProperty('--mouse-y', `${y}%`);
+      });
+    });
+
+    // ── Provider Marquee ──
+    const providers = [
+      'Google Gemini', 'Groq', 'Cerebras', 'NVIDIA NIM', 'Mistral AI',
+      'OpenRouter', 'GitHub Models', 'Cohere', 'Cloudflare AI', 'HuggingFace',
+      'Ollama Cloud', 'Kilo Gateway', 'Pollinations', 'LLM7', 'OpenCode Zen',
+      'OVH AI Endpoints', 'Agnes AI', 'Reka', 'SiliconFlow', '智谱 AI',
+      '阿里云百炼', '百度千帆', 'Routeway', 'BazaarLink', 'AINative Studio',
+      'AI Horde', '自定义接口'
+    ];
+
+    const track = document.getElementById('providers-track');
+    const allProviders = [...providers, ...providers];
+    allProviders.forEach(name => {
+      const card = document.createElement('div');
+      card.className = 'provider-card';
+      card.innerHTML = `<span class="provider-card-dot"></span><span class="provider-card-name">${name}</span>`;
+      track.appendChild(card);
+    });
+
+    // Animate the marquee
+    const animateProviders = () => {
+      const singleWidth = track.scrollWidth / 2;
+      gsap.to(track, {
+        x: -singleWidth,
+        duration: 30,
+        ease: 'none',
+        repeat: -1,
+        modifiers: {
+          x: gsap.utils.unitize(x => parseFloat(x) % singleWidth)
+        }
+      });
+    };
+    animateProviders();
+
+    // ── Particle Canvas ──
+    const canvas = document.getElementById('particles-canvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let animationId;
+
+    const resizeCanvas = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    class Particle {
+      constructor() {
+        this.reset();
+        this.y = Math.random() * canvas.height;
+      }
+      reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = -10;
+        this.size = Math.random() * 2 + 0.5;
+        this.speed = Math.random() * 0.35 + 0.1;
+        this.opacity = Math.random() * 0.35 + 0.08;
+        this.color = Math.random() < 0.5 ? '0,229,255' : '124,58,237';
+      }
+      update() {
+        this.y += this.speed;
+        if (this.y > canvas.height + 10) {
+          this.reset();
+          this.y = -10;
+        }
+      }
+      draw(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.color},${this.opacity})`;
+        ctx.fill();
+      }
+    }
+
+    const particleCount = Math.min(70, Math.floor(window.innerWidth / 22));
+    for (let i = 0; i < particleCount; i++) {
+      particles.push(new Particle());
+    }
+
+    const drawConnections = () => {
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 140) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(${particles[i].color},${0.05 * (1 - dist / 140)})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      }
+    };
+
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => { p.update(); p.draw(ctx); });
+      drawConnections();
+      animationId = requestAnimationFrame(animate);
+    };
+    animate();
+
+    window.addEventListener('resize', () => {
+      const newCount = Math.min(70, Math.floor(window.innerWidth / 22));
+      if (newCount > particles.length) {
+        for (let i = particles.length; i < newCount; i++) {
+          particles.push(new Particle());
+        }
+      } else {
+        particles = particles.slice(0, newCount);
+      }
+    });
+
+    // ── Feature Blocks Reveal ──
+    document.querySelectorAll('.feature-block').forEach(block => {
+      const inner = block.querySelector('.feature-inner');
+      const visual = block.querySelector('.fv-card, .code-block, .failover-visual, .fusion-visual, .encrypt-visual, .info-grid');
+      const isReversed = block.classList.contains('reverse');
+      gsap.fromTo(inner,
+        { opacity: 0, x: isReversed ? 40 : -40 },
+        {
+          opacity: 1, x: 0,
+          duration: 0.8,
+          ease: 'power3.out',
+          scrollTrigger: {
+            trigger: block,
+            start: 'top 80%',
+            toggleActions: 'play none none reverse'
+          }
+        }
+      );
+      if (visual) {
+        gsap.fromTo(visual,
+          { opacity: 0, x: isReversed ? -40 : 40, y: 20 },
+          {
+            opacity: 1, x: 0, y: 0,
+            duration: 0.8,
+            ease: 'power3.out',
+            delay: 0.15,
+            scrollTrigger: {
+              trigger: block,
+              start: 'top 80%',
+              toggleActions: 'play none none reverse'
+            }
+          }
+        );
+      }
+    });
+
+    // ── Deploy Steps Reveal ──
+    document.querySelectorAll('.step-section').forEach((step, i) => {
+      gsap.fromTo(step,
+        { opacity: 0, y: 40 },
+        {
+          opacity: 1, y: 0,
+          duration: 0.7,
+          ease: 'power3.out',
+          scrollTrigger: {
+            trigger: step,
+            start: 'top 82%',
+            toggleActions: 'play none none reverse'
+          }
+        }
+      );
+    });
+
+    console.log('%c LLMRouter %c Landing Page %c Ready ',
+      'background:linear-gradient(135deg,#00e5ff,#7c3aed);color:#fff;padding:4px 8px;border-radius:4px 0 0 4px;font-weight:700;',
+      'background:#fff;color:#0a0a14;padding:4px 8px;border-top:1px solid #eee;border-bottom:1px solid #eee;',
+      'background:#f0eff8;color:#7c3aed;padding:4px 8px;border-radius:0 4px 4px 0;'
+    );
+  </script>
+</body>
+</html>

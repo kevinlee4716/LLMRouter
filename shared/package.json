@@ -1,0 +1,8 @@
+{
+  "name": "@llmrouter/shared",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "kevinlee <kevinlee4716@gmail.com>",
+  "main": "./types.ts",
+  "types": "./types.ts"
+}

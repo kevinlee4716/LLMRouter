@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Database (runtime files, auto-generated on first run)
+server/data/*
+!server/data/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+
+# Encryption key (auto-generated dev key, never commit)
+.encryption-key
+
+# Environment variables
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# Runtime files
+*.pid
+*.log
+.llmrouter.pid
+llmrouter.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Personal deployment scripts (may contain credentials)
+deploy-pi.sh
+update-hermes.sh

@@ -1,0 +1,52 @@
+{
+  "name": "llmrouter",
+  "version": "1.0.0",
+  "description": "A self-hosted LLM gateway router that unifies multiple AI providers behind a single OpenAI-compatible API",
+  "license": "MIT",
+  "author": "kevinlee <kevinlee4716@gmail.com>",
+  "keywords": [
+    "llm",
+    "router",
+    "gateway",
+    "proxy",
+    "openai",
+    "anthropic",
+    "load-balancer",
+    "failover",
+    "ai",
+    "self-hosted"
+  ],
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names server,client \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:lan": "concurrently --kill-others-on-fail --names server,client \"npm run dev -w server\" \"npm run dev -w client -- --host\"",
+    "build": "npm run build -w server && npm run build -w client",
+    "build:server": "npm run build -w server",
+    "start": "node server/dist/index.js",
+    "test": "echo \"Tests coming soon\" && exit 0",
+    "db:migration:up": "npm run db:migration:up -w server",
+    "db:migration:down": "npm run db:migration:down -w server",
+    "db:migration:fresh": "npm run db:migration:fresh -w server",
+    "db:migration:status": "npm run db:migration:status -w server",
+    "db:migration:create": "npm run db:migration:create -w server"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kevinlee/LLMRouter.git"
+  },
+  "homepage": "https://github.com/kevinlee/LLMRouter#readme",
+  "bugs": {
+    "url": "https://github.com/kevinlee/LLMRouter/issues"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.18.0 <25.0.0",
+    "npm": ">=10.0.0"
+  }
+}
