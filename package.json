@@ -36,11 +36,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kevinlee/LLMRouter.git"
+    "url": "https://github.com/kevinlee4716/LLMRouter.git"
   },
-  "homepage": "https://github.com/kevinlee/LLMRouter#readme",
+  "homepage": "https://github.com/kevinlee4716/LLMRouter#readme",
   "bugs": {
-    "url": "https://github.com/kevinlee/LLMRouter/issues"
+    "url": "https://github.com/kevinlee4716/LLMRouter/issues"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
