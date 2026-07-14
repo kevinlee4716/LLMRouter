@@ -4,6 +4,8 @@
 
 将 Google、Groq、Cerebras、Mistral、OpenRouter、GitHub Models、Cloudflare、Cohere、智谱 AI、阿里云百炼、百度千帆、硅基流动等多个 LLM 厂商聚合在一个 `/v1` API 后面。密钥加密存储，路由器自动选择最佳可用模型，某个厂商限流时自动切换到下一个。
 
+🌐 **官网**：[llmrouter.kevinlee.bond](https://llmrouter.kevinlee.bond) | ⭐ **GitHub**：[kevinlee4716/LLMRouter](https://github.com/kevinlee4716/LLMRouter)
+
 ---
 
 ## 目录
