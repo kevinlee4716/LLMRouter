@@ -12,6 +12,7 @@
 
 - [项目介绍](#项目介绍)
 - [安装部署](#安装部署)
+  - [🤖 桌面 Agent 一键部署（推荐）](#-桌面-agent-一键部署推荐)
   - [前置要求](#前置要求)
   - [macOS](#macos)
   - [Linux](#linux)
@@ -47,6 +48,16 @@ Google · Groq · Cerebras · Mistral · OpenRouter · GitHub Models · Cloudfla
 ---
 
 ## 安装部署
+
+### 🤖 桌面 Agent 一键部署（推荐）
+
+如果你在使用 **Kimi Work**、**MiniMax Agent**、**阿里 QoderWork**、**腾讯 WorkBuddy**、**Hermes**、**OpenClaw**、**ChatGPT**、**Cursor** 等桌面 AI Agent，只需一句话即可完成安装部署：
+
+> 帮我把 https://github.com/kevinlee4716/LLMRouter 在本地安装部署
+
+Agent 会自动完成克隆仓库、安装依赖、构建项目和启动服务，无需手动操作。
+
+---
 
 ### 前置要求
 
