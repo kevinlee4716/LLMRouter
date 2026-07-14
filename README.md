@@ -1,5 +1,7 @@
 # LLMRouter
 
+中文 | [English](README_EN.md)
+
 **个人自用 LLM 网关路由器 — 统一多个 AI 厂商，一个 API 搞定一切**
 
 将 Google、Groq、Cerebras、Mistral、OpenRouter、GitHub Models、Cloudflare、Cohere、智谱 AI、阿里云百炼、百度千帆、硅基流动等多个 LLM 厂商聚合在一个 `/v1` API 后面。密钥加密存储，路由器自动选择最佳可用模型，某个厂商限流时自动切换到下一个。
